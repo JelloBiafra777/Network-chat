@@ -1,5 +1,8 @@
 package com.example.network_chat.server;
 
+
+import com.example.network_chat.Command;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -13,6 +16,7 @@ public class ClientHandler {
     private ChatServer server;
     private String nick;
     private final AuthService authService;
+    private boolean isSpyDetected;
 
     public String getNick() {
         return nick;
@@ -31,8 +35,9 @@ public class ClientHandler {
             new Thread(() -> {
                 try {
                     Authenticate();
-                    ReadMessages();
+                    if (!isSpyDetected) ReadMessages();
                 } finally {
+                    System.out.println("Server disconnected");
                     CloseConnection();
                 }
             }).start();
@@ -46,25 +51,31 @@ public class ClientHandler {
         while (true) {
             try {
                 String s = in.readUTF();
-                if (s.startsWith("/auth")) {
-                    String[] split = s.split("\\s");
-                    String login = split[1];
-                    String password = split[2];
+                Command command = Command.getCommand(s);
+                if (command == Command.END) {
+                    System.out.println("$$$$");
+                    isSpyDetected = true;
+                    break;
+                }
+                if (command == Command.AUTH) {
+                    String login = command.parse(s)[0];
+                    String password = command.parse(s)[1];
                     String nick = authService.getNickByLoginAndPassword(login, password);
                     if (nick != null) {
                         if (server.isNickBusy(nick)) {
-                            SendMessage("This user is already autorised");
+                            SendMessage(Command.ERROR, "This user is already authorized");
                             continue;
                         }
-                        SendMessage("//Autorisation " + nick + " is passed!");
+                        SendMessage(Command.AUTHOK, nick);
                         this.nick = nick;
-                        server.broadcast("User " + nick + " has entered the chat!");
+                        server.broadcast(Command.MESSAGE, "User " + nick + " has entered the chat!");
                         server.subscribe(this);
                         break;
                     } else {
-                        SendMessage("Login or password is not correct!");
+                        SendMessage(Command.ERROR, "Login or password is not correct!");
                     }
                 }
+
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -73,10 +84,14 @@ public class ClientHandler {
         }
     }
 
+    public void SendMessage(Command command, String... params) {
+        SendMessage(command.collectMessage(params));
+    }
+
 
     private void CloseConnection() {
 
-        SendMessage("/end");
+        SendMessage(Command.END);
 
         if (in != null) {
             try {
@@ -104,7 +119,7 @@ public class ClientHandler {
         }
     }
 
-    public void SendMessage(String s) {
+    private void SendMessage(String s) {
 
         try {
             out.writeUTF(s);
@@ -116,26 +131,22 @@ public class ClientHandler {
     private void ReadMessages() {
 
         while (true) {
-            String message = null;
             try {
-                message = in.readUTF();
-                if (message.equals("/end")) {
+                String message = in.readUTF();
+                Command command = Command.getCommand(message);
+                if (command == Command.END) {
+                    System.out.println("!!!!");
                     break;
                 }
-
-                if (message.startsWith("/w ")) {
-                    server.sendPrivateMessage(this.nick, message);
-                    String[] split = message.split("\\s", 3);
-                    String messageReceiver = split[1];
-                    if (server.isReceiverExists(messageReceiver)) {
-                        String s = "private message from " + this.nick + " to " + split[1] + "> " + split[2];
-                        server.sendPrivateMessage(messageReceiver, s);
-                    } else {
-                        server.sendPrivateMessage(this.nick, messageReceiver + " No such user exist ");
-                    }
-                } else {
-                    server.broadcast(nick + "> " + message);
+                if (command == Command.MESSAGE) {
+                    server.broadcast(Command.MESSAGE, nick + "> " + command.parse(message)[0]);
                 }
+
+                if (command == Command.PRIVATE_MESSAGE) {
+                    String[] params = command.parse(message);
+                    server.sendPrivateMessage(this, params[0], params[1]);
+                }
+
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
