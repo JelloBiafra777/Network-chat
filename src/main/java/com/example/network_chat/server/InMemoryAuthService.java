@@ -3,7 +3,6 @@ package com.example.network_chat.server;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 public class InMemoryAuthService implements AuthService {
 
@@ -47,7 +46,6 @@ public class InMemoryAuthService implements AuthService {
     @Override
     public String getNickByLoginAndPassword(String login, String password) {
         for (UserData user : users) {
-            System.out.println(password);
             if ((login.equals(user.getLogin())) && (password.equals((user.getPassword())))) {
                 return user.getNick();
             }

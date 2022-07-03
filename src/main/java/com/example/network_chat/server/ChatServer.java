@@ -1,17 +1,20 @@
 package com.example.network_chat.server;
 
+import com.example.network_chat.Command;
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class ChatServer {
 
-    private final List<ClientHandler> clients;
+    private final Map<String, ClientHandler> clients;
 
     public ChatServer() {
-        this.clients = new ArrayList<>();
+        this.clients = new HashMap<>();
     }
 
     public void run() {
@@ -31,49 +34,41 @@ public class ChatServer {
 
     }
 
-    public void broadcast(String s) {
-        for (ClientHandler client : clients) {
-            client.SendMessage(s);
+    public void broadcast(Command command, String s) {
+        for (ClientHandler client : this.clients.values()) {
+            client.SendMessage(command, s);
         }
 
     }
 
     public void subscribe(ClientHandler clientHandler) {
-        clients.add(clientHandler);
+        clients.put(clientHandler.getNick(), clientHandler);
+        broadcastClientList();
+    }
+
+    private void broadcastClientList() {
+        final String nicks = clients.values().stream()
+                .map(ClientHandler::getNick)
+                .collect(Collectors.joining(" "));
+        broadcast(Command.CLIENTS, nicks);
     }
 
     public boolean isNickBusy(String nick) {
-        for (ClientHandler client : clients) {
-            if (nick.equals(client.getNick())) {
-                return true;
-            }
-        }
-        return false;
-
+        return clients.get(nick) != null;
     }
 
     public void unsubscribe(ClientHandler clientHandler) {
-        clients.remove(clientHandler);
+        clients.remove(clientHandler.getNick());
+        broadcastClientList();
     }
 
-    public void sendPrivateMessage(String nick, String message) {
-
-        for (ClientHandler client : clients) {
-            if (nick.equals(client.getNick())) {
-                client.SendMessage(message);
-            }
-
+    public void sendPrivateMessage(ClientHandler from, String to, String message) {
+        ClientHandler clientTo = clients.get(to);
+        if (clientTo == null) {
+            from.SendMessage(Command.ERROR, "No such user exists");
+            return;
         }
-
+        clientTo.SendMessage(Command.MESSAGE, "Private message from " + from.getNick() + ": " + message);
+        from.SendMessage(Command.MESSAGE, "Private message to " + to + ": " + message);
     }
-
-    public boolean isReceiverExists(String messageReceiver) {
-        for (ClientHandler client : clients) {
-            if (messageReceiver.equals(client.getNick())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
 }
